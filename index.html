@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>三原色对决 | Primary Color Duel</title>
+    <!--
+      三原色对决（Primary Color Duel）
+      - 两位玩家通过调节 R/G/B 滑杆来逼近系统给出的目标颜色
+      - 实时计算匹配度并显示进度，任一方≥95%即宣布胜利并锁定控件
+      - 使用原生 HTML/CSS/JS 构建，主要逻辑均有中文注释
+    -->
+    <style>
+      :root {
+        --bg: #f8fbff;
+        --text: #1f2a44;
+        --panel: #ffffff;
+        --shadow: 0 10px 24px rgba(24, 68, 146, 0.12);
+        --red: #ff4d4f;
+        --green: #52c41a;
+        --blue: #1677ff;
+        --muted: #8aa0c5;
+        --accent: #ffd666;
+        --win: #ffec3d;
+      }
+
+      html, body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        color: var(--text);
+        background: radial-gradient(1200px 600px at 20% -10%, #e6f0ff 0%, transparent 60%),
+          radial-gradient(900px 500px at 120% 10%, #e9ffe6 0%, transparent 60%),
+          radial-gradient(1000px 600px at 50% 120%, #fff1f0 0%, transparent 60%),
+          var(--bg);
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px 16px 32px;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 16px;
+        min-height: 100vh;
+      }
+
+      /* 顶部：目标颜色显示区 */
+      .target {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 16px;
+        align-items: center;
+        background: var(--panel);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        padding: 16px;
+      }
+
+      .target-box {
+        width: 120px;
+        height: 120px;
+        border-radius: 16px;
+        box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.6), 0 12px 20px rgba(0, 0, 0, 0.12);
+        background: #000;
+      }
+
+      .target-info {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 24px;
+        line-height: 1.3;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .badge {
+        background: linear-gradient(90deg, var(--red), var(--green), var(--blue));
+        color: #fff;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        letter-spacing: 0.3px;
+        box-shadow: 0 4px 10px rgba(22, 119, 255, 0.25);
+      }
+
+      .rgb-text {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Courier New", monospace;
+        color: var(--muted);
+      }
+
+      /* 中部：左右玩家控制区 */
+      .play-area {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        padding: 16px;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 14px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .player-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .player-name {
+        font-weight: 700;
+        letter-spacing: 0.4px;
+      }
+
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+        display: grid;
+        gap: 4px;
+      }
+      .kbd {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: #f6f8ff;
+        border: 1px solid #e0e7ff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Courier New", monospace;
+      }
+
+      .color-box {
+        width: 100%;
+        height: 120px;
+        border-radius: 16px;
+        background: #000;
+        box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.5), 0 12px 20px rgba(0, 0, 0, 0.12);
+      }
+
+      .sliders {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+
+      .slider-row {
+        display: grid;
+        grid-template-columns: 56px 1fr 52px;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .chip {
+        padding: 6px 10px;
+        border-radius: 10px;
+        color: #fff;
+        font-weight: 700;
+        text-align: center;
+        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.22);
+      }
+
+      .chip.r { background: var(--red); }
+      .chip.g { background: var(--green); }
+      .chip.b { background: var(--blue); }
+
+      input[type="range"] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 100%;
+        height: 12px;
+        background: #f1f5ff;
+        border-radius: 999px;
+        outline: none;
+        box-shadow: inset 0 2px 6px rgba(22, 119, 255, 0.15);
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: #fff;
+        border: 3px solid var(--accent);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        cursor: pointer;
+      }
+
+      input[type="range"]::-moz-range-thumb {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: #fff;
+        border: 3px solid var(--accent);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        cursor: pointer;
+      }
+
+      .value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Courier New", monospace;
+        color: var(--muted);
+        text-align: right;
+      }
+
+      .meter {
+        height: 16px;
+        background: #edf2ff;
+        border-radius: 999px;
+        overflow: hidden;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+      }
+
+      .meter-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #ffd666, #95de64, #5cdbd3);
+        border-radius: 999px;
+        transition: width 160ms ease-out;
+      }
+
+      .percent {
+        font-weight: 700;
+        color: #3f4d7a;
+      }
+
+      .center-footer {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 16px;
+        align-items: center;
+        margin-top: 4px;
+      }
+
+      .score {
+        background: var(--panel);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        padding: 12px 16px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .score-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .btn {
+        user-select: none;
+        border: 0;
+        padding: 14px 20px;
+        border-radius: 12px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        color: #fff;
+        background: linear-gradient(135deg, var(--blue), #69b1ff);
+        box-shadow: 0 10px 20px rgba(22, 119, 255, 0.35);
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease;
+      }
+      .btn:hover { transform: translateY(-1px); }
+      .btn:active { transform: translateY(0); box-shadow: 0 6px 14px rgba(22,119,255,0.35); }
+      .btn.secondary {
+        background: linear-gradient(135deg, #13c2c2, #36cfc9);
+        box-shadow: 0 10px 20px rgba(19, 194, 194, 0.35);
+      }
+
+      .announcement {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(255, 255, 255, 0.9);
+        border: 3px dashed var(--win);
+        padding: 6px 12px;
+        border-radius: 10px;
+        font-weight: 800;
+        color: #614700;
+        display: none;
+      }
+
+      @media (max-width: 900px) {
+        .play-area { grid-template-columns: 1fr; }
+        .target { grid-template-columns: 100px 1fr; }
+        .target-box { width: 90px; height: 90px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- 顶部：目标颜色展示 -->
+      <section class="target">
+        <div class="target-box" id="targetBox" aria-label="目标颜色"></div>
+        <div class="target-info">
+          <h2 class="title">三原色对决 <span class="badge">Primary Color Duel</span></h2>
+          <div>目标颜色（RGB）：<span class="rgb-text" id="targetRgb">rgb(?, ?, ?)</span></div>
+          <div class="rgb-text">提示：拖动左右玩家的 R/G/B 滑杆，逼近目标色！</div>
+        </div>
+      </section>
+
+      <!-- 中部：两位玩家控制区 -->
+      <section class="play-area">
+        <!-- Player A -->
+        <div class="panel" id="panelA">
+          <div class="announcement" id="announceA">Player A 胜利！</div>
+          <div class="player-header">
+            <div class="player-name">Player A</div>
+            <div class="rgb-text" id="rgbA">rgb(0, 0, 0)</div>
+          </div>
+          <div class="hint">
+            <div>键盘控制：R <span class="kbd">Q</span>/<span class="kbd">A</span>，G <span class="kbd">W</span>/<span class="kbd">S</span>，B <span class="kbd">E</span>/<span class="kbd">D</span></div>
+            <div>按住 <span class="kbd">Shift</span> 快速调整</div>
+          </div>
+          <div class="color-box" id="boxA" aria-label="Player A 当前颜色"></div>
+          <div class="sliders">
+            <div class="slider-row">
+              <div class="chip r">R</div>
+              <input type="range" min="0" max="255" value="0" id="aR" />
+              <div class="value" id="aRVal">0</div>
+            </div>
+            <div class="slider-row">
+              <div class="chip g">G</div>
+              <input type="range" min="0" max="255" value="0" id="aG" />
+              <div class="value" id="aGVal">0</div>
+            </div>
+            <div class="slider-row">
+              <div class="chip b">B</div>
+              <input type="range" min="0" max="255" value="0" id="aB" />
+              <div class="value" id="aBVal">0</div>
+            </div>
+            <div class="score">
+              <div class="score-line">
+                <span>A 匹配度</span>
+                <span class="percent" id="percentA">0%</span>
+              </div>
+              <div class="meter" aria-label="A 匹配度进度">
+                <div class="meter-fill" id="meterA"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Player B -->
+        <div class="panel" id="panelB">
+          <div class="announcement" id="announceB">Player B 胜利！</div>
+          <div class="player-header">
+            <div class="player-name">Player B</div>
+            <div class="rgb-text" id="rgbB">rgb(0, 0, 0)</div>
+          </div>
+          <div class="hint">
+            <div>键盘控制：R <span class="kbd">U</span>/<span class="kbd">J</span>，G <span class="kbd">I</span>/<span class="kbd">K</span>，B <span class="kbd">O</span>/<span class="kbd">L</span></div>
+            <div>按住 <span class="kbd">Shift</span> 快速调整</div>
+          </div>
+          <div class="color-box" id="boxB" aria-label="Player B 当前颜色"></div>
+          <div class="sliders">
+            <div class="slider-row">
+              <div class="chip r">R</div>
+              <input type="range" min="0" max="255" value="0" id="bR" />
+              <div class="value" id="bRVal">0</div>
+            </div>
+            <div class="slider-row">
+              <div class="chip g">G</div>
+              <input type="range" min="0" max="255" value="0" id="bG" />
+              <div class="value" id="bGVal">0</div>
+            </div>
+            <div class="slider-row">
+              <div class="chip b">B</div>
+              <input type="range" min="0" max="255" value="0" id="bB" />
+              <div class="value" id="bBVal">0</div>
+            </div>
+            <div class="score">
+              <div class="score-line">
+                <span>B 匹配度</span>
+                <span class="percent" id="percentB">0%</span>
+              </div>
+              <div class="meter" aria-label="B 匹配度进度">
+                <div class="meter-fill" id="meterB"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 底部中间：比分与控制按钮 -->
+      <section class="center-footer">
+        <div class="score">
+          <div class="score-line"><strong>A</strong><span class="percent" id="scoreA">0%</span></div>
+          <div class="meter"><div class="meter-fill" id="scoreMeterA"></div></div>
+        </div>
+        <button class="btn" id="startBtn">开始游戏</button>
+        <div class="score">
+          <div class="score-line"><strong>B</strong><span class="percent" id="scoreB">0%</span></div>
+          <div class="meter"><div class="meter-fill" id="scoreMeterB"></div></div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      // =============================
+      // 工具函数与游戏状态
+      // =============================
+
+      /** 将 r,g,b 转换为 css rgb 字符串 */
+      function toRGB({ r, g, b }) {
+        return `rgb(${r}, ${g}, ${b})`;
+      }
+
+      /**
+       * 颜色相似度计算（题目给定算法）
+       * 返回 0–100 之间的匹配度（数值越大越接近）
+       */
+      function colorSimilarity(c1, c2) {
+        const distance = Math.sqrt(
+          Math.pow(c1.r - c2.r, 2) +
+          Math.pow(c1.g - c2.g, 2) +
+          Math.pow(c1.b - c2.b, 2)
+        );
+        return Math.max(0, 100 - (distance / 4.42));
+      }
+
+      /** 四舍五入到 1 位小数，用于展示 */
+      function round1(num) { return Math.round(num * 10) / 10; }
+
+      // 游戏全局状态
+      const state = {
+        target: { r: 0, g: 0, b: 0 }, // 目标颜色
+        a: { r: 0, g: 0, b: 0 },      // A 当前颜色
+        b: { r: 0, g: 0, b: 0 },      // B 当前颜色
+        started: false,                // 是否已开始
+        locked: false                  // 是否锁定（有人胜利）
+      };
+
+      // DOM 获取
+      const targetBox = document.getElementById('targetBox');
+      const targetRgb = document.getElementById('targetRgb');
+
+      const boxA = document.getElementById('boxA');
+      const rgbA = document.getElementById('rgbA');
+      const aR = document.getElementById('aR');
+      const aG = document.getElementById('aG');
+      const aB = document.getElementById('aB');
+      const aRVal = document.getElementById('aRVal');
+      const aGVal = document.getElementById('aGVal');
+      const aBVal = document.getElementById('aBVal');
+      const percentA = document.getElementById('percentA');
+      const meterA = document.getElementById('meterA');
+      const announceA = document.getElementById('announceA');
+
+      const boxB = document.getElementById('boxB');
+      const rgbB = document.getElementById('rgbB');
+      const bR = document.getElementById('bR');
+      const bG = document.getElementById('bG');
+      const bB = document.getElementById('bB');
+      const bRVal = document.getElementById('bRVal');
+      const bGVal = document.getElementById('bGVal');
+      const bBVal = document.getElementById('bBVal');
+      const percentB = document.getElementById('percentB');
+      const meterB = document.getElementById('meterB');
+      const announceB = document.getElementById('announceB');
+
+      const scoreA = document.getElementById('scoreA');
+      const scoreB = document.getElementById('scoreB');
+      const scoreMeterA = document.getElementById('scoreMeterA');
+      const scoreMeterB = document.getElementById('scoreMeterB');
+      const startBtn = document.getElementById('startBtn');
+
+      // =============================
+      // 初始化与重置
+      // =============================
+
+      /** 生成随机目标颜色 */
+      function randomTarget() {
+        state.target = {
+          r: Math.floor(Math.random() * 256),
+          g: Math.floor(Math.random() * 256),
+          b: Math.floor(Math.random() * 256),
+        };
+        targetBox.style.background = toRGB(state.target);
+        targetRgb.textContent = toRGB(state.target);
+      }
+
+      /** 重置玩家状态与 UI（不改变目标色） */
+      function resetPlayers() {
+        state.a = { r: 0, g: 0, b: 0 };
+        state.b = { r: 0, g: 0, b: 0 };
+        aR.value = aG.value = aB.value = 0;
+        bR.value = bG.value = bB.value = 0;
+        aRVal.textContent = aGVal.textContent = aBVal.textContent = '0';
+        bRVal.textContent = bGVal.textContent = bBVal.textContent = '0';
+        updatePlayerUI('a');
+        updatePlayerUI('b');
+        updateScores();
+        unlockSliders();
+        hideAnnouncements();
+      }
+
+      /** 初始化新一局 */
+      function newGame() {
+        randomTarget();
+        resetPlayers();
+        state.started = true;
+        state.locked = false;
+        startBtn.textContent = '开始新游戏';
+      }
+
+      /** 游戏结束 -> 锁定控件，更新按钮 */
+      function endGame() {
+        state.locked = true;
+        lockSliders();
+        startBtn.textContent = '再来一局';
+      }
+
+      // =============================
+      // UI 更新
+      // =============================
+
+      /** 根据玩家标识更新颜色展示与数字 */
+      function updatePlayerUI(which) {
+        const player = state[which];
+        const box = which === 'a' ? boxA : boxB;
+        const rgbText = which === 'a' ? rgbA : rgbB;
+        box.style.background = toRGB(player);
+        rgbText.textContent = toRGB(player);
+      }
+
+      /** 更新匹配度进度与数字（左/右卡片 + 底部比分） */
+      function updateScores() {
+        const simA = colorSimilarity(state.a, state.target);
+        const simB = colorSimilarity(state.b, state.target);
+        const simA1 = round1(simA);
+        const simB1 = round1(simB);
+
+        percentA.textContent = `${simA1}%`;
+        percentB.textContent = `${simB1}%`;
+        meterA.style.width = `${Math.max(0, Math.min(100, simA))}%`;
+        meterB.style.width = `${Math.max(0, Math.min(100, simB))}%`;
+
+        scoreA.textContent = `${simA1}%`;
+        scoreB.textContent = `${simB1}%`;
+        scoreMeterA.style.width = `${Math.max(0, Math.min(100, simA))}%`;
+        scoreMeterB.style.width = `${Math.max(0, Math.min(100, simB))}%`;
+
+        // 判定胜负：任一方 ≥ 95% 则结束
+        if (!state.locked && state.started) {
+          const aWin = simA >= 95;
+          const bWin = simB >= 95;
+          if (aWin || bWin) {
+            // 双方都达到则比较数值，完全相等则平局
+            if (aWin && bWin) {
+              if (Math.abs(simA - simB) < 1e-9) {
+                // 平局提示
+                announceA.textContent = '平局！';
+                announceB.textContent = '平局！';
+                announceA.style.display = 'block';
+                announceB.style.display = 'block';
+              } else if (simA > simB) {
+                announceA.textContent = 'Player A 胜利！';
+                announceA.style.display = 'block';
+              } else {
+                announceB.textContent = 'Player B 胜利！';
+                announceB.style.display = 'block';
+              }
+            } else if (aWin) {
+              announceA.textContent = 'Player A 胜利！';
+              announceA.style.display = 'block';
+            } else {
+              announceB.textContent = 'Player B 胜利！';
+              announceB.style.display = 'block';
+            }
+            endGame();
+          }
+        }
+      }
+
+      function hideAnnouncements() {
+        announceA.style.display = 'none';
+        announceB.style.display = 'none';
+      }
+
+      function lockSliders() {
+        [aR, aG, aB, bR, bG, bB].forEach((el) => el.setAttribute('disabled', 'true'));
+      }
+      function unlockSliders() {
+        [aR, aG, aB, bR, bG, bB].forEach((el) => el.removeAttribute('disabled'));
+      }
+
+      // =============================
+      // 事件绑定：滑杆输入与按钮
+      // =============================
+
+      function handleSliderInput(which, channel, value) {
+        if (!state.started || state.locked) return; // 未开始或已锁定则忽略
+        const v = Number(value);
+        state[which][channel] = v;
+        // 更新数值显示
+        if (which === 'a') {
+          if (channel === 'r') aRVal.textContent = String(v);
+          if (channel === 'g') aGVal.textContent = String(v);
+          if (channel === 'b') aBVal.textContent = String(v);
+        } else {
+          if (channel === 'r') bRVal.textContent = String(v);
+          if (channel === 'g') bGVal.textContent = String(v);
+          if (channel === 'b') bBVal.textContent = String(v);
+        }
+        // 更新当前色块与匹配度
+        updatePlayerUI(which);
+        updateScores();
+      }
+
+      // ---------- 键盘控制（双人可同时操作） ----------
+      const sliderElems = {
+        a: { r: aR, g: aG, b: aB },
+        b: { r: bR, g: bG, b: bB },
+      };
+      const valueElems = {
+        a: { r: aRVal, g: aGVal, b: aBVal },
+        b: { r: bRVal, g: bGVal, b: bBVal },
+      };
+
+      /** 仅更新状态与UI（不触发 updateScores） */
+      function adjustChannel(which, channel, delta) {
+        if (!state.started || state.locked) return;
+        const next = Math.max(0, Math.min(255, state[which][channel] + delta));
+        if (next === state[which][channel]) return; // 没变化就跳过
+        state[which][channel] = next;
+        sliderElems[which][channel].value = String(next);
+        valueElems[which][channel].textContent = String(next);
+        updatePlayerUI(which);
+      }
+
+      const keyBindings = {
+        a: {
+          inc: { q: 'r', w: 'g', e: 'b' },
+          dec: { a: 'r', s: 'g', d: 'b' },
+        },
+        b: {
+          inc: { u: 'r', i: 'g', o: 'b' },
+          dec: { j: 'r', k: 'g', l: 'b' },
+        }
+      };
+
+      const activeKeys = new Set();
+      let shiftPressed = false;
+
+      function isHandledKey(key) {
+        return !!(
+          keyBindings.a.inc[key] || keyBindings.a.dec[key] ||
+          keyBindings.b.inc[key] || keyBindings.b.dec[key]
+        );
+      }
+
+      window.addEventListener('keydown', (e) => {
+        const key = e.key.toLowerCase();
+        if (key === 'shift') {
+          shiftPressed = true;
+          return;
+        }
+        if (isHandledKey(key)) {
+          e.preventDefault();
+          activeKeys.add(key);
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        const key = e.key.toLowerCase();
+        if (key === 'shift') {
+          shiftPressed = false;
+          return;
+        }
+        if (activeKeys.has(key)) activeKeys.delete(key);
+      });
+
+      window.addEventListener('blur', () => {
+        activeKeys.clear();
+        shiftPressed = false;
+      });
+
+      // 按键长按处理循环（requestAnimationFrame）
+      let lastTick = 0;
+      const tickIntervalMs = 60; // 每 60ms 调整 1 次
+      function loop(ts) {
+        if (ts - lastTick >= tickIntervalMs) {
+          if (state.started && !state.locked && activeKeys.size > 0) {
+            const step = shiftPressed ? 5 : 1;
+            let changed = false;
+            activeKeys.forEach((key) => {
+              const chAI = keyBindings.a.inc[key];
+              const chAD = keyBindings.a.dec[key];
+              const chBI = keyBindings.b.inc[key];
+              const chBD = keyBindings.b.dec[key];
+              if (chAI) { adjustChannel('a', chAI, step); changed = true; }
+              if (chAD) { adjustChannel('a', chAD, -step); changed = true; }
+              if (chBI) { adjustChannel('b', chBI, step); changed = true; }
+              if (chBD) { adjustChannel('b', chBD, -step); changed = true; }
+            });
+            if (changed) updateScores();
+          }
+          lastTick = ts;
+        }
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+
+      // A 滑杆
+      aR.addEventListener('input', (e) => handleSliderInput('a', 'r', e.target.value));
+      aG.addEventListener('input', (e) => handleSliderInput('a', 'g', e.target.value));
+      aB.addEventListener('input', (e) => handleSliderInput('a', 'b', e.target.value));
+      // B 滑杆
+      bR.addEventListener('input', (e) => handleSliderInput('b', 'r', e.target.value));
+      bG.addEventListener('input', (e) => handleSliderInput('b', 'g', e.target.value));
+      bB.addEventListener('input', (e) => handleSliderInput('b', 'b', e.target.value));
+
+      // 开始 / 新局 按钮
+      startBtn.addEventListener('click', () => {
+        // 初次点击或每次点击均开始新一局
+        newGame();
+      });
+
+      // 页面初始：展示默认状态（未开始）
+      targetRgb.textContent = 'rgb(?, ?, ?)';
+      boxA.style.background = toRGB(state.a);
+      boxB.style.background = toRGB(state.b);
+      updateScores();
+    </script>
+  </body>
+  </html>
+
+

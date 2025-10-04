@@ -1,0 +1,10 @@
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Node / build (保留，如后续加入构建)
+node_modules/
+dist/
+build/
